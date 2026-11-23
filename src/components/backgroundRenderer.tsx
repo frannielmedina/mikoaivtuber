@@ -30,7 +30,8 @@ export const BackgroundRenderer = ({ config, stageFixed = false }: Props) => {
     if (config.type === "greenscreen") {
       target.style.backgroundImage = "none";
       target.style.backgroundColor = "#00b140";
-    } else if (config.type === "none") {
+    } else if (config.type === "none" || config.type === "cafe") {
+      // "cafe" is drawn by the 3D canvas itself, so the page behind it stays empty.
       target.style.backgroundImage = "none";
       target.style.backgroundColor = "transparent";
     } else if (config.type === "color") {

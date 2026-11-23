@@ -4,7 +4,10 @@ import { ChatLogDialog } from "./chatLogDialog";
 import React, { useCallback, useContext, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { StageSizeId } from "@/features/stage/stageConfig";
-import { Settings } from "./settings";
+import { Settings, SettingsContent } from "./settings";
+import { PopoutPortal, openControlWindow, SETTINGS_WINDOW_NAME } from "./popoutPortal";
+import { CafeConfig } from "@/features/cafe/cafeConfig";
+import { GamesConfig } from "@/features/games/gamesConfig";
 import { CharactersApi } from "@/features/characters/useCharacters";
 import { ThemeId } from "@/features/theme/theme";
 import { ViewerContext } from "@/features/vrmViewer/viewerContext";
@@ -78,7 +81,7 @@ type Props = {
   onTwitchConnect: () => void;
   onTwitchDisconnect: () => void;
   onChangeScreenShareConfig: (config: ScreenShareConfig) => void;
-  onScreenShareStart: () => void;
+  onScreenShareStart: (devices?: MediaDevices) => void;
   onScreenShareStop: () => void;
   onChangeBackgroundConfig: (config: BackgroundConfig) => void;
   onChangeCaptionStyle: (style: CaptionStyle) => void;
@@ -96,6 +99,10 @@ type Props = {
   onChangeGraphicsConfig: (config: GraphicsConfig) => void;
   /** Streamer mode: the Settings button opens the pop-out control window instead of the modal. */
   onOpenSettings?: () => void;
+  cafeConfig: CafeConfig;
+  onChangeCafeConfig: (config: CafeConfig) => void;
+  gamesConfig: GamesConfig;
+  onChangeGamesConfig: (config: GamesConfig) => void;
   stageSize: StageSizeId;
   onChangeStageSize: (size: StageSizeId) => void;
   /** Pre-built Aika collab panel (state lives in index.tsx). */
@@ -156,6 +163,10 @@ export const Menu = ({
   onTwitchDisconnect,
   onChangeScreenShareConfig,
   onScreenShareStart,
+  cafeConfig,
+  onChangeCafeConfig,
+  gamesConfig,
+  onChangeGamesConfig,
   onScreenShareStop,
   onChangeBackgroundConfig,
   onChangeCaptionStyle,
@@ -180,12 +191,37 @@ export const Menu = ({
   const [showChatLog, setShowChatLog] = useState(false);
   const { viewer } = useContext(ViewerContext);
 
+  // Settings open in their own browser window (so they never cover the stage / the
+  // OBS capture). If the popup is blocked, or on phones, the in-page modal is used instead.
+  const [settingsWin, setSettingsWin] = useState<Window | null>(null);
+
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setSettingsWin((w) => {
+      try { w?.close(); } catch { /* ignore */ }
+      return null;
+    });
+  }, []);
+
   const handleSaveAndClose = useCallback(() => {
     onSaveSettings();
-    setShowSettings(false);
-  }, [onSaveSettings]);
+    closeSettings();
+  }, [onSaveSettings, closeSettings]);
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+
+  // MUST run straight from the click: browsers block window.open otherwise.
+  const openSettings = () => {
+    if (onOpenSettings) return onOpenSettings(); // streamer mode has its own control window
+    if (!isMobile) {
+      const win = openControlWindow(900, 860, SETTINGS_WINDOW_NAME);
+      if (win) {
+        setSettingsWin(win);
+        return;
+      }
+    }
+    setShowSettings(true);
+  };
   const shouldShowUI = uiVisible || (showSettings && isMobile);
 
   // Vision can be toggled if screen share is active (chrome or vdoninja)
@@ -198,6 +234,89 @@ export const Menu = ({
   // Determine vision button appearance
   const visionActive = visionConfig.enabled && screenShareConfig.active;
   const visionBusy   = visionStatus === "capturing" || visionStatus === "analyzing";
+
+  // `Component` = the centred modal (in-page) or the bare panel (inside the popup window).
+  const renderSettings = (
+    extra: Partial<React.ComponentProps<typeof Settings>> = {},
+    Component: typeof Settings = Settings
+  ) => (
+    <Component
+          aiConfig={aiConfig}
+          chatLog={chatLog}
+          characters={characters}
+          theme={theme}
+          onChangeTheme={onChangeTheme}
+          ttsConfig={ttsConfig}
+          koeiroParam={koeiroParam}
+          twitchConfig={twitchConfig}
+          twitchConnected={twitchConnected}
+          screenShareConfig={screenShareConfig}
+          backgroundConfig={backgroundConfig}
+          captionStyle={captionStyle}
+          visionConfig={visionConfig}
+          visionStatus={visionStatus}
+          visionLastDescription={visionLastDescription}
+          visionLastCaptureTime={visionLastCaptureTime}
+          visionSecondsUntilNext={visionSecondsUntilNext}
+          visionError={visionError}
+          discordConfig={discordConfig}
+          discordConnected={discordConnected}
+          discordConnectionError={discordConnectionError}
+          minecraftConfig={minecraftConfig}
+          minecraftStatus={minecraftStatus}
+          onChangeMinecraftConfig={onChangeMinecraftConfig}
+          onMinecraftConnect={onMinecraftConnect}
+          onMinecraftDisconnect={onMinecraftDisconnect}
+          adBreakConfig={adBreakConfig}
+          onChangeAdBreakConfig={onChangeAdBreakConfig}
+          onTestAdBreak={onTestAdBreak}
+          eventSubStatus={eventSubStatus}
+          eventSubError={eventSubError}
+          onTestFollow={onTestFollow}
+          onTestRaid={onTestRaid}
+          onTestSub={onTestSub}
+          onTestResub={onTestResub}
+          onTestStreak={onTestStreak}
+          onTestBits={onTestBits}
+          autonomousConfig={autonomousConfig}
+          onChangeAutonomousConfig={onChangeAutonomousConfig}
+          graphicsConfig={graphicsConfig}
+          onChangeGraphicsConfig={onChangeGraphicsConfig}
+          isMobile={isMobile}
+          aikaCollabPanel={aikaCollabPanel}
+          onClickClose={closeSettings}
+          onSaveAndClose={handleSaveAndClose}
+          onChangeAiConfig={onChangeAiConfig}
+          onChangeChatLog={onChangeChatLog}
+          onClickResetChatLog={handleClickResetChatLog}
+          fallbackMessage={fallbackMessage}
+          onChangeFallbackMessage={onChangeFallbackMessage}
+          onClickResetFallbackMessage={onClickResetFallbackMessage}
+          onChangeTTSConfig={onChangeTTSConfig}
+          onChangeKoeiroParam={onChangeKoeiroParam}
+          onChangeTwitchConfig={onChangeTwitchConfig}
+          onTwitchConnect={onTwitchConnect}
+          onTwitchDisconnect={onTwitchDisconnect}
+          onChangeScreenShareConfig={onChangeScreenShareConfig}
+          onScreenShareStart={onScreenShareStart}
+          onScreenShareStop={onScreenShareStop}
+          onChangeBackgroundConfig={onChangeBackgroundConfig}
+          onChangeCaptionStyle={onChangeCaptionStyle}
+          onChangeVisionConfig={onChangeVisionConfig}
+          onVisionCaptureNow={onVisionCaptureNow}
+          onChangeDiscordConfig={onChangeDiscordConfig}
+          onDiscordConnect={onDiscordConnect}
+          onDiscordDisconnect={onDiscordDisconnect}
+          onLoadSettings={onLoadSettings}
+          stageSize={stageSize}
+          onChangeStageSize={onChangeStageSize}
+          cafeConfig={cafeConfig}
+          onChangeCafeConfig={onChangeCafeConfig}
+          gamesConfig={gamesConfig}
+          onChangeGamesConfig={onChangeGamesConfig}
+          {...extra}
+        />
+  );
 
   return (
     <>
@@ -213,7 +332,7 @@ export const Menu = ({
             iconName="24/Menu"
             label="Settings"
             isProcessing={false}
-            onClick={() => (onOpenSettings ? onOpenSettings() : setShowSettings(true))}
+            onClick={openSettings}
           />
 
           {/* Chat Log */}
@@ -295,78 +414,23 @@ export const Menu = ({
         )}
 
       {showSettings && createPortal(
-        <div className="font-M_PLUS_2"><Settings
-          aiConfig={aiConfig}
-          chatLog={chatLog}
-          characters={characters}
-          theme={theme}
-          onChangeTheme={onChangeTheme}
-          ttsConfig={ttsConfig}
-          koeiroParam={koeiroParam}
-          twitchConfig={twitchConfig}
-          twitchConnected={twitchConnected}
-          screenShareConfig={screenShareConfig}
-          backgroundConfig={backgroundConfig}
-          captionStyle={captionStyle}
-          visionConfig={visionConfig}
-          visionStatus={visionStatus}
-          visionLastDescription={visionLastDescription}
-          visionLastCaptureTime={visionLastCaptureTime}
-          visionSecondsUntilNext={visionSecondsUntilNext}
-          visionError={visionError}
-          discordConfig={discordConfig}
-          discordConnected={discordConnected}
-          discordConnectionError={discordConnectionError}
-          minecraftConfig={minecraftConfig}
-          minecraftStatus={minecraftStatus}
-          onChangeMinecraftConfig={onChangeMinecraftConfig}
-          onMinecraftConnect={onMinecraftConnect}
-          onMinecraftDisconnect={onMinecraftDisconnect}
-          adBreakConfig={adBreakConfig}
-          onChangeAdBreakConfig={onChangeAdBreakConfig}
-          onTestAdBreak={onTestAdBreak}
-          eventSubStatus={eventSubStatus}
-          eventSubError={eventSubError}
-          onTestFollow={onTestFollow}
-          onTestRaid={onTestRaid}
-          onTestSub={onTestSub}
-          onTestResub={onTestResub}
-          onTestStreak={onTestStreak}
-          onTestBits={onTestBits}
-          autonomousConfig={autonomousConfig}
-          onChangeAutonomousConfig={onChangeAutonomousConfig}
-          graphicsConfig={graphicsConfig}
-          onChangeGraphicsConfig={onChangeGraphicsConfig}
-          isMobile={isMobile}
-          aikaCollabPanel={aikaCollabPanel}
-          onClickClose={() => setShowSettings(false)}
-          onSaveAndClose={handleSaveAndClose}
-          onChangeAiConfig={onChangeAiConfig}
-          onChangeChatLog={onChangeChatLog}
-          onClickResetChatLog={handleClickResetChatLog}
-          fallbackMessage={fallbackMessage}
-          onChangeFallbackMessage={onChangeFallbackMessage}
-          onClickResetFallbackMessage={onClickResetFallbackMessage}
-          onChangeTTSConfig={onChangeTTSConfig}
-          onChangeKoeiroParam={onChangeKoeiroParam}
-          onChangeTwitchConfig={onChangeTwitchConfig}
-          onTwitchConnect={onTwitchConnect}
-          onTwitchDisconnect={onTwitchDisconnect}
-          onChangeScreenShareConfig={onChangeScreenShareConfig}
-          onScreenShareStart={onScreenShareStart}
-          onScreenShareStop={onScreenShareStop}
-          onChangeBackgroundConfig={onChangeBackgroundConfig}
-          onChangeCaptionStyle={onChangeCaptionStyle}
-          onChangeVisionConfig={onChangeVisionConfig}
-          onVisionCaptureNow={onVisionCaptureNow}
-          onChangeDiscordConfig={onChangeDiscordConfig}
-          onDiscordConnect={onDiscordConnect}
-          onDiscordDisconnect={onDiscordDisconnect}
-          onLoadSettings={onLoadSettings}
-          stageSize={stageSize}
-          onChangeStageSize={onChangeStageSize}
-        /></div>,
+        <div className="font-M_PLUS_2">{renderSettings()}</div>,
         document.body
+      )}
+
+      {/* Settings in their own window. The children live in THIS React tree, so they share
+          all state/handlers with the main window — no copy to keep in sync. */}
+      {settingsWin && (
+        <PopoutPortal win={settingsWin} title="Miko — Settings" onClosed={() => setSettingsWin(null)}>
+          <div className="bg-white flex flex-col" style={{ height: "100vh" }}>
+            {renderSettings({
+              isMobile: true, // full-height layout, Close = close the window
+              targetWindow: settingsWin,
+              // getDisplayMedia only works from the window that received the click
+              onScreenShareStart: () => onScreenShareStart(settingsWin.navigator.mediaDevices),
+            }, SettingsContent)}
+          </div>
+        </PopoutPortal>
       )}
 
       {/* Caption */}

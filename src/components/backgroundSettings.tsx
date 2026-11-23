@@ -41,6 +41,7 @@ export const BackgroundSettings = ({ config, onChangeConfig }: Props) => {
       <div className="grid grid-cols-2 gap-8 mb-16">
         {(
           [
+            { value: "cafe" as BackgroundType, label: "☕ Anime Cafe", desc: "3D cafe she walks around in" },
             { value: "image" as BackgroundType, label: "🖼️ Image", desc: "Default or custom image" },
             { value: "color" as BackgroundType, label: "🎨 Solid Color", desc: "Choose any color" },
             { value: "greenscreen" as BackgroundType, label: "🟩 Green Screen", desc: "Pure chroma-key green" },
@@ -61,6 +62,15 @@ export const BackgroundSettings = ({ config, onChangeConfig }: Props) => {
           </button>
         ))}
       </div>
+
+      {/* Cafe info */}
+      {config.type === "cafe" && (
+        <div className="p-16 bg-surface1 rounded-8 text-sm text-text-primary/70">
+          A 3D anime cafe. Miko wanders around while nobody is talking, and the camera pushes in on her
+          when someone sends a message. Time of day, walking speed and close-up timing are in the{" "}
+          <b>Cafe &amp; Games</b> tab. While you share your screen the cafe is hidden and she moves to the corner.
+        </div>
+      )}
 
       {/* Color picker */}
       {config.type === "color" && (

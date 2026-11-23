@@ -2,17 +2,18 @@ import { ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 export const CONTROL_WINDOW_NAME = "chatvrm-streamer-controls";
+export const SETTINGS_WINDOW_NAME = "chatvrm-settings";
 
 /**
  * Opens the control-panel popup. MUST be called straight from a click handler —
  * browsers block `window.open` otherwise.
  */
-export function openControlWindow(width = 520, height = 820): Window | null {
+export function openControlWindow(width = 520, height = 820, name: string = CONTROL_WINDOW_NAME): Window | null {
   const left = Math.max(0, window.screenX + window.outerWidth - width - 24);
   const top = Math.max(0, window.screenY + 40);
   const win = window.open(
     "",
-    CONTROL_WINDOW_NAME,
+    name,
     `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
   );
   win?.focus();

@@ -8,6 +8,9 @@ import { TwitchSettings } from "./twitchSettings";
 import { ScreenShareSettings } from "./screenShareSettings";
 import { AIProviderSettings } from "./aiProviderSettings";
 import { BackgroundSettings } from "./backgroundSettings";
+import { CafeSettings } from "./cafeSettings";
+import { CafeConfig } from "@/features/cafe/cafeConfig";
+import { GamesConfig } from "@/features/games/gamesConfig";
 import { CaptionSettings } from "./captionSettings";
 import { VisionSettings } from "./visionSettings";
 import { DiscordSettings } from "./discordSettings";
@@ -96,6 +99,12 @@ type Props = {
   onScreenShareStart: () => void;
   onScreenShareStop: () => void;
   onChangeBackgroundConfig: (config: BackgroundConfig) => void;
+  cafeConfig: CafeConfig;
+  onChangeCafeConfig: (config: CafeConfig) => void;
+  gamesConfig: GamesConfig;
+  onChangeGamesConfig: (config: GamesConfig) => void;
+  /** Window whose Escape key closes the panel (the popup window when settings are shown in their own window). */
+  targetWindow?: Window;
   onChangeCaptionStyle: (style: CaptionStyle) => void;
   onChangeVisionConfig: (config: VisionConfig) => void;
   onVisionCaptureNow: () => void;
@@ -157,6 +166,7 @@ type TabId =
   | "history"
   | "llm"
   | "ui"
+  | "cafe"
   | "tts"
   | "discord"
   | "aika"
@@ -172,6 +182,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "history", label: "Chat History", icon: "💬" },
   { id: "llm", label: "LLM", icon: "🧠" },
   { id: "ui", label: "UI & Background", icon: "🎨" },
+  { id: "cafe", label: "Cafe & Games", icon: "☕" },
   { id: "tts", label: "TTS", icon: "🔊" },
   { id: "discord", label: "Discord", icon: "💬" },
   { id: "aika", label: "Aika Collab", icon: "🐱" },
@@ -245,6 +256,11 @@ export const SettingsContent = (props: Props) => {
     onScreenShareStart,
     onScreenShareStop,
     onChangeBackgroundConfig,
+    cafeConfig,
+    onChangeCafeConfig,
+    gamesConfig,
+    onChangeGamesConfig,
+    targetWindow,
     onChangeCaptionStyle,
     onChangeVisionConfig,
     onVisionCaptureNow,
@@ -277,9 +293,10 @@ export const SettingsContent = (props: Props) => {
         }
       }
     };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [showSaveConfirm, isMobile, onClickClose]);
+    const w = targetWindow ?? window;
+    w.addEventListener("keydown", handleKey);
+    return () => w.removeEventListener("keydown", handleKey);
+  }, [showSaveConfirm, isMobile, onClickClose, targetWindow]);
 
   const handleClose = useCallback(() => {
     if (isMobile) {
@@ -548,6 +565,20 @@ export const SettingsContent = (props: Props) => {
               <CaptionSettings
                 style={captionStyle}
                 onChangeStyle={onChangeCaptionStyle}
+              />
+            </>
+          )}
+
+          {activeTab === "cafe" && (
+            <>
+              <SectionTitle>Anime Cafe &amp; Games</SectionTitle>
+              <CafeSettings
+                cafeConfig={cafeConfig}
+                onChangeCafeConfig={onChangeCafeConfig}
+                gamesConfig={gamesConfig}
+                onChangeGamesConfig={onChangeGamesConfig}
+                backgroundConfig={backgroundConfig}
+                onChangeBackgroundConfig={onChangeBackgroundConfig}
               />
             </>
           )}

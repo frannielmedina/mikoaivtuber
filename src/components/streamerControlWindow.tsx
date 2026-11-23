@@ -6,6 +6,9 @@ import { TTSSettings } from "./ttsSettings";
 import { AIProviderSettings } from "./aiProviderSettings";
 import { CaptionSettings, CaptionStyle } from "./captionSettings";
 import { BackgroundSettings } from "./backgroundSettings";
+import { CafeSettings } from "./cafeSettings";
+import { CafeConfig } from "@/features/cafe/cafeConfig";
+import { GamesConfig } from "@/features/games/gamesConfig";
 import { VisionSettings } from "./visionSettings";
 import { GraphicsSettings } from "./graphicsSettings";
 import { StreamerSettings } from "./streamerSettings";
@@ -53,6 +56,10 @@ export type StreamerControlProps = {
   onChangeCaptionStyle: (s: CaptionStyle) => void;
 
   backgroundConfig: BackgroundConfig;
+  cafeConfig: CafeConfig;
+  onChangeCafeConfig: (c: CafeConfig) => void;
+  gamesConfig: GamesConfig;
+  onChangeGamesConfig: (c: GamesConfig) => void;
   onChangeBackgroundConfig: (c: BackgroundConfig) => void;
 
   visionConfig: VisionConfig;
@@ -81,7 +88,7 @@ export type StreamerControlProps = {
   onStopBroadcast: () => void;
 };
 
-type TabId = "chat" | "screen" | "twitch" | "tts" | "llm" | "caption" | "bg" | "vision" | "3d" | "stream" | "aika";
+type TabId = "chat" | "screen" | "twitch" | "tts" | "llm" | "caption" | "bg" | "cafe" | "vision" | "3d" | "stream" | "aika";
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "chat", label: "Chat", icon: "💬" },
@@ -91,6 +98,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "llm", label: "LLM", icon: "🧠" },
   { id: "caption", label: "Caption", icon: "🔤" },
   { id: "bg", label: "Background", icon: "🎨" },
+  { id: "cafe", label: "Cafe & Games", icon: "☕" },
   { id: "vision", label: "Vision", icon: "👁️" },
   { id: "3d", label: "3D", icon: "🎮" },
   { id: "stream", label: "Stream", icon: "📡" },
@@ -180,6 +188,16 @@ const Content = (p: StreamerControlProps) => {
             )}
             {tab === "bg" && (
               <BackgroundSettings config={p.backgroundConfig} onChangeConfig={p.onChangeBackgroundConfig} />
+            )}
+            {tab === "cafe" && (
+              <CafeSettings
+                cafeConfig={p.cafeConfig}
+                onChangeCafeConfig={p.onChangeCafeConfig}
+                gamesConfig={p.gamesConfig}
+                onChangeGamesConfig={p.onChangeGamesConfig}
+                backgroundConfig={p.backgroundConfig}
+                onChangeBackgroundConfig={p.onChangeBackgroundConfig}
+              />
             )}
             {tab === "vision" && (
               <VisionSettings
