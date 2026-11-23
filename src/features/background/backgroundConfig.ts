@@ -1,4 +1,4 @@
-export type BackgroundType = "image" | "color" | "greenscreen" | "none";
+export type BackgroundType = "cafe" | "image" | "color" | "greenscreen" | "none";
 
 export type BackgroundConfig = {
   type: BackgroundType;
@@ -8,7 +8,7 @@ export type BackgroundConfig = {
 };
 
 export const DEFAULT_BACKGROUND_CONFIG: BackgroundConfig = {
-  type: "image",
+  type: "cafe", // the 3D anime cafe; "image" is the old flat background
   color: "#00b140",
   imageUrl: "",
   builtinImage: "bg-c.png",
