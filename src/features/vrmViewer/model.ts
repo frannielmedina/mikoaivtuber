@@ -15,6 +15,8 @@ import {
 import { isVrmaTag, loadVrmaForTag } from "../emoteController/vrmaController";
 import { isExpressionGestureTag } from "../emoteController/emoteConstants";
 import { IdleController } from "../emoteController/idleController";
+import { WalkController } from "../cafe/walkController";
+import { TalkGestureController } from "../cafe/talkGestures";
 
 // Crossfade time (seconds) between the idle loop and a VRMA animation.
 const VRMA_FADE_SEC = 0.4;
@@ -23,6 +25,14 @@ export class Model {
   public vrm?: VRM | null;
   public mixer?: THREE.AnimationMixer;
   public emoteController?: EmoteController;
+  /** Procedural walk cycle (driven by the CafeDirector). */
+  public walk?: WalkController;
+  /** Automatic hand/head gestures while speaking. */
+  public talk?: TalkGestureController;
+  /** vrm.scene.rotation.y right after loading (π for VRM 0.x models). */
+  public baseYaw = 0;
+  private _speaking = false;
+  private _volume = 0;
 
   private _lookAtTargetParent: THREE.Object3D;
   private _lipSync?: LipSync;
@@ -56,6 +66,9 @@ export class Model {
     this._currentVrmaTag = undefined;
     // Procedural idle (breathing, sway, arms-down pose) — replaces idle_loop.vrma
     this._idle = new IdleController(vrm);
+    this.walk = new WalkController(vrm);
+    this.talk = new TalkGestureController(vrm);
+    this.baseYaw = vrm.scene.rotation.y;
     this.emoteController = new EmoteController(vrm, this._lookAtTargetParent);
 
     // No-op — pose system no longer pauses the mixer
@@ -67,6 +80,9 @@ export class Model {
       cancelPose(this.vrm);
       this.mixer?.stopAllAction();
       this._idle = undefined;
+      this.walk = undefined;
+      this.talk = undefined;
+      this._speaking = false;
       this._vrmaActions.clear();
       this._currentVrma = undefined;
       this._currentVrmaTag = undefined;
@@ -148,6 +164,16 @@ export class Model {
     return Math.min(1, w);
   }
 
+  /** True while TTS audio is playing for this character. */
+  public get isSpeaking(): boolean {
+    return this._speaking;
+  }
+
+  /** 0..1: how much a .vrma animation currently controls the body. */
+  public get vrmaWeight(): number {
+    return this._vrmaWeight();
+  }
+
   public async speak(buffer: ArrayBuffer, screenplay: Screenplay) {
     this.emoteController?.playEmotion(screenplay.expression);
 
@@ -171,7 +197,9 @@ export class Model {
     }
 
     await new Promise((resolve) => {
+      this._speaking = true;
       this._lipSync?.playFromArrayBuffer(buffer, () => {
+        this._speaking = false;
         this.emoteController?.playEmotion("neutral");
         resolve(true);
       });
@@ -182,6 +210,7 @@ export class Model {
     // 1. Lip sync volume sampling
     if (this._lipSync) {
       const { volume } = this._lipSync.update();
+      this._volume = volume;
       this.emoteController?.lipSync("aa", volume);
     }
 
@@ -201,6 +230,14 @@ export class Model {
         this.emoteController?.currentEmotion ?? "neutral",
         1 - this._vrmaWeight()
       );
+    }
+
+    // 3a'. Cafe layers on top of the idle: walk cycle + talking gestures.
+    //      Both fade out while a .vrma plays, and an explicit pose (step 4) overrides them.
+    {
+      const bodyBlend = 1 - this._vrmaWeight();
+      this.walk?.update(delta, bodyBlend);
+      this.talk?.update(delta, bodyBlend, this._speaking, this._volume);
     }
 
     // 3b. When a VRMA animation is about to end, start fading back to idle

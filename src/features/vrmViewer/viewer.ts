@@ -3,6 +3,7 @@ import { Model } from "./model";
 import { preloadAllVrma } from "@/features/emoteController/vrmaController";
 import { STAGE_ELEMENT_ID } from "@/features/stage/stageConfig";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { CafeDirector } from "@/features/cafe/cafeDirector";
 import {
   GraphicsConfig,
   DEFAULT_GRAPHICS_CONFIG,
@@ -22,6 +23,15 @@ export class Viewer {
   private _scene: THREE.Scene;
   private _camera?: THREE.PerspectiveCamera;
   private _cameraControls?: OrbitControls;
+
+  /**
+   * The 3D anime cafe (replaces the flat background image). It is only "active"
+   * while the Background setting is "Anime Cafe" AND no screen share / gaming
+   * mode is running — in gaming mode the character goes back to the corner
+   * facecam framing below, exactly as before.
+   */
+  public readonly cafe: CafeDirector;
+  private _cafeEnabled = false;
 
   // Default close-up framing (face/upper body, centered) — used both on
   // initial load and restored whenever screen share / VDO.Ninja stops.
@@ -90,8 +100,35 @@ export class Viewer {
     scene.add(ambientLight);
     this._ambLight = ambientLight;
 
+    this.cafe = new CafeDirector(scene);
+    this.cafe.onChange = () => this.applyCafeLights();
+
     this._clock = new THREE.Clock();
     this._clock.start();
+  }
+
+  /** Background setting → turn the cafe on/off. */
+  public setCafeEnabled(enabled: boolean) {
+    this._cafeEnabled = enabled;
+  }
+
+  // Cafe time-of-day tints the shared lights (so the character matches the room).
+  private applyCafeLights() {
+    if (this.cafe.active) {
+      const t = this.cafe.cafe.tint;
+      this._ambLight.color.setHex(t.ambient);
+      this._dirLight.color.setHex(t.dir);
+    } else {
+      this._ambLight.color.setHex(0xffffff);
+      this._dirLight.color.setHex(0xffffff);
+    }
+  }
+
+  private updateCafe() {
+    const want = this._cafeEnabled && !this._isScreenShareFraming;
+    if (want === this.cafe.active) return;
+    this.cafe.setActive(want);
+    if (!want) this.applyDefaultFraming(); // back to the classic camera
   }
 
   public loadVrm(url: string) {
@@ -101,6 +138,7 @@ export class Viewer {
       if (!this.model?.vrm) return;
       this.model.vrm.scene.traverse((obj) => { obj.frustumCulled = false; });
       this._scene.add(this.model.vrm.scene);
+      this.cafe.setModel(this.model);
       preloadAllVrma(); // warm the cache for /poses/*.vrma in the background
 
       const box = new THREE.Box3().setFromObject(this.model.vrm.scene);
@@ -115,6 +153,7 @@ export class Viewer {
   }
 
   public unloadVRM(): void {
+    this.cafe.setModel(undefined);
     if (this.model?.vrm) {
       this._scene.remove(this.model.vrm.scene);
       this.model?.unLoadVrm();
@@ -143,7 +182,7 @@ export class Viewer {
     this._renderer.setSize(width, height);
     this.applyGraphics(stored);
 
-    this._camera = new THREE.PerspectiveCamera(this.DEFAULT_FOV, width / height, 0.1, 20.0);
+    this._camera = new THREE.PerspectiveCamera(this.DEFAULT_FOV, width / height, 0.1, 80.0);
     this._camera.position.copy(this.DEFAULT_CAMERA_POS);
 
     // OrbitControls must exist before we can set its target — doing this in
@@ -154,6 +193,8 @@ export class Viewer {
     this._cameraControls.screenSpacePanning = true;
     this._cameraControls.target.set(0, 1.3, 0);
     this._cameraControls.update();
+    this.cafe.attach(this._camera, this._cameraControls);
+    if (process.env.NODE_ENV !== "production") (window as any).__chatvrmViewer = this;
 
     // A plain `window.resize` listener only fires on an actual browser
     // window resize. It does NOT fire when the canvas's own container
@@ -366,6 +407,7 @@ export class Viewer {
   }
 
   public resetCamera() {
+    if (this.cafe.active) return; // the cafe director owns the camera
     if (this._isScreenShareFraming) {
       this.applyScreenShareFraming();
       return;
@@ -405,18 +447,24 @@ export class Viewer {
     if (active) {
       this.applyScreenShareFraming();
     } else {
-      this._camera.fov = this.DEFAULT_FOV;
-      this._camera.updateProjectionMatrix();
-      this._camera.position.copy(this.DEFAULT_CAMERA_POS);
-      const headNode = this.model?.vrm?.humanoid.getNormalizedBoneNode("head");
-      if (headNode) {
-        const headWPos = headNode.getWorldPosition(new THREE.Vector3());
-        this._cameraControls.target.set(headWPos.x, headWPos.y, headWPos.z);
-      } else {
-        this._cameraControls.target.set(0, 1.3, 0);
-      }
-      this._cameraControls.update();
+      this.applyDefaultFraming();
     }
+  }
+
+  // The classic centred close-up, restored when screen share stops or the cafe is switched off.
+  private applyDefaultFraming() {
+    if (!this._camera || !this._cameraControls) return;
+    this._camera.fov = this.DEFAULT_FOV;
+    this._camera.updateProjectionMatrix();
+    this._camera.position.copy(this.DEFAULT_CAMERA_POS);
+    const headNode = this.model?.vrm?.humanoid.getNormalizedBoneNode("head");
+    if (headNode) {
+      const headWPos = headNode.getWorldPosition(new THREE.Vector3());
+      this._cameraControls.target.set(headWPos.x, headWPos.y, headWPos.z);
+    } else {
+      this._cameraControls.target.set(0, 1.3, 0);
+    }
+    this._cameraControls.update();
   }
 
   // User fine-tuning of the shared-screen framing (see ScreenShareConfig.zoom / shiftY).
@@ -508,6 +556,8 @@ export class Viewer {
     const delta = Math.min(this._accum, 0.1);
     this._accum = interval > 0 ? Math.min(Math.max(this._accum - interval, 0), interval) : 0;
 
+    this.updateCafe();
+    this.cafe.update(delta);
     if (this.model) this.model.update(delta);
     if (this._renderer && this._camera) {
       this._renderer.render(this._scene, this._camera);
