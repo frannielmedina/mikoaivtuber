@@ -102,6 +102,10 @@ import { useCharacters } from "@/features/characters/useCharacters";
 import { ensureEmotionTag } from "@/features/characters/emotionPrompt";
 import { ThemeId, DEFAULT_THEME, loadTheme, applyTheme } from "@/features/theme/theme";
 import { Stage } from "@/components/stage";
+import { CafeConfig, DEFAULT_CAFE_CONFIG, sanitizeCafeConfig } from "@/features/cafe/cafeConfig";
+import { GamesConfig, DEFAULT_GAMES_CONFIG, sanitizeGamesConfig, GameCorner } from "@/features/games/gamesConfig";
+import { gameManager } from "@/features/games/gameManager";
+import { GamesOverlay } from "@/components/gamesOverlay";
 import { StageSizeId, DEFAULT_STAGE_SIZE, parseStageSize, STAGE_ELEMENT_ID } from "@/features/stage/stageConfig";
 import { pollPredictionStore } from "@/features/pollPrediction/pollPredictionStore";
 import { parseSlashCommand, extractAiDirective } from "@/features/pollPrediction/pollParser";
@@ -148,6 +152,8 @@ function Home() {
   // Home is only ever mounted client-side (see Page below), so reading the URL here is safe.
   const [isStreamer] = useState(() => isStreamerUrl());
   const [stageSize, setStageSize] = useState<StageSizeId>(DEFAULT_STAGE_SIZE);
+  const [cafeConfig, setCafeConfig] = useState<CafeConfig>(DEFAULT_CAFE_CONFIG);
+  const [gamesConfig, setGamesConfig] = useState<GamesConfig>(DEFAULT_GAMES_CONFIG);
   const [controlWin, setControlWin] = useState<Window | null>(null);
   const [broadcast, setBroadcast] = useState<BroadcastState>(rtmpBroadcaster.getState());
   const [goLivePrompt, setGoLivePrompt] = useState(false);
@@ -233,6 +239,8 @@ function Home() {
         if (params.visionConfig)
           setVisionConfig({ ...DEFAULT_VISION_CONFIG, ...params.visionConfig });
         if (params.stageSize) setStageSize(params.stageSize);
+        if (params.cafeConfig) setCafeConfig(sanitizeCafeConfig(params.cafeConfig));
+        if (params.gamesConfig) setGamesConfig(sanitizeGamesConfig(params.gamesConfig));
         if (params.screenShareConfig)
           // never auto-resume a share: the browser's picker has to be used again
           setScreenShareConfig({ ...DEFAULT_SCREEN_SHARE_CONFIG, ...params.screenShareConfig, active: false });
@@ -271,10 +279,12 @@ function Home() {
           streamerConfig,
           adBreakConfig,
           autonomousConfig,
+          cafeConfig,
+          gamesConfig,
         })
       )
     );
-  }, [fallbackMessage, koeiroParam, chatLog, aiConfig, ttsConfig, twitchConfig, discordConfig, minecraftConfig, backgroundConfig, captionStyle, visionConfig, graphicsConfig, stageSize, screenShareConfig, streamerConfig, adBreakConfig, autonomousConfig]);
+  }, [fallbackMessage, koeiroParam, chatLog, aiConfig, ttsConfig, twitchConfig, discordConfig, minecraftConfig, backgroundConfig, captionStyle, visionConfig, graphicsConfig, stageSize, screenShareConfig, streamerConfig, adBreakConfig, autonomousConfig, cafeConfig, gamesConfig]);
 
   // ── VRM model persistence ──────────────────────────────────────────────────
   const [viewerReady, setViewerReady] = useState(false);
@@ -334,14 +344,43 @@ function Home() {
         streamerConfig,
         adBreakConfig,
         autonomousConfig,
+        cafeConfig,
+        gamesConfig,
       })
     );
-  }, [fallbackMessage, koeiroParam, chatLog, aiConfig, ttsConfig, twitchConfig, discordConfig, minecraftConfig, backgroundConfig, captionStyle, visionConfig, graphicsConfig, stageSize, screenShareConfig, streamerConfig, adBreakConfig, autonomousConfig]);
+  }, [fallbackMessage, koeiroParam, chatLog, aiConfig, ttsConfig, twitchConfig, discordConfig, minecraftConfig, backgroundConfig, captionStyle, visionConfig, graphicsConfig, stageSize, screenShareConfig, streamerConfig, adBreakConfig, autonomousConfig, cafeConfig, gamesConfig]);
 
   // Apply 3D settings (FPS cap, resolution, lights, auto quality) to the viewer.
   useEffect(() => {
     if (viewerReady) viewer.applyGraphics(graphicsConfig);
   }, [graphicsConfig, viewerReady, viewer]);
+
+  // While screen sharing, keep the game board on the side AWAY from the facecam box.
+  const gamesCorner: GameCorner = (() => {
+    const c = gamesConfig.corner;
+    if (!screenShareConfig.active) return c;
+    const cam = screenShareConfig.cornerPosition ?? "right";
+    const v = c.startsWith("top") ? "top" : "bottom";
+    if (cam === "left" && c.endsWith("left")) return `${v}-right` as GameCorner;
+    if (cam === "right" && c.endsWith("right")) return `${v}-left` as GameCorner;
+    return c;
+  })();
+
+  // ── Anime cafe ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    viewer.cafe.setConfig(cafeConfig);
+  }, [cafeConfig, viewer]);
+
+  // Cafe is the background → the 3D scene is shown (and hidden again for screen share / gaming).
+  useEffect(() => {
+    viewer.setCafeEnabled(backgroundConfig.type === "cafe");
+  }, [backgroundConfig.type, viewer]);
+
+  // The AI is thinking/answering → the camera stays in the close-up; 10 s after she
+  // goes idle (cafeConfig.closeupHoldSeconds) it zooms back out.
+  useEffect(() => {
+    viewer.cafe.setConversationBusy(chatProcessing);
+  }, [chatProcessing, viewer]);
 
   // `by` = who ran !reset in Twitch chat. When given, the (now empty) history gets a
   // single confirmation line and the caption shows it too.
@@ -608,6 +647,28 @@ function Home() {
     []
   );
 
+  // ── Chat games (Connect 4) ────────────────────────────────────────────────
+  useEffect(() => {
+    gameManager.setConfig(gamesConfig);
+  }, [gamesConfig]);
+
+  // Miko reacts to the start / end of a game through the normal AI pipeline.
+  useEffect(
+    () =>
+      gameManager.onEvent((e) => {
+        const prompt =
+          e.type === "started"
+            ? `[Game] ${e.by === "You" ? "Your streamer" : e.by} just started a game of Connect 4 against you (you play the yellow discs). Announce it in one short, cheerful sentence and tell chat they play by typing !c4 and a column number from 1 to 7.`
+            : e.type === "chatWon"
+            ? "[Game] The Connect 4 game is over and chat beat you! Congratulate them in one short sentence (a little playfully salty is fine)."
+            : e.type === "mikoWon"
+            ? "[Game] The Connect 4 game is over and YOU won! Gloat playfully in one short sentence, then invite chat to a rematch with !c4."
+            : "[Game] The Connect 4 game ended in a draw. React in one short sentence and invite chat to try again with !c4.";
+        sendPromptStable(prompt);
+      }),
+    [sendPromptStable]
+  );
+
   const { startAdCountdown } = useAdBreak({
     config: adBreakConfig,
     isTwitchActive: () => twitchConfig.enabled && twitchConnected,
@@ -627,7 +688,10 @@ function Home() {
   // sending them to the AI as conversation.
   const handleLocalSendChat = useCallback(
     async (text: string) => {
+      // "!c4 3" typed in the text box plays the game instead of going to the AI.
+      if (gameManager.handleLocalText(text)) return;
       notifyActivity();
+      viewer.cafe.notifyConversation();
 
       const slash = parseSlashCommand(text);
       if (slash) {
@@ -665,7 +729,7 @@ function Home() {
 
       await sendChatRef.current(text);
     },
-    [notifyActivity, twitchConfig]
+    [notifyActivity, twitchConfig, viewer]
   );
 
   // ── Alert test buttons (Settings > Twitch) ────────────────────────────────
@@ -712,6 +776,7 @@ function Home() {
 
       setActiveTwitchMessage(next);
       notifyActivity();
+      viewer.cafe.notifyConversation();
       const prompt = buildTwitchPrompt(next);
       await sendChatRef.current(prompt);
 
@@ -720,7 +785,7 @@ function Home() {
     }
 
     twitchProcessingRef.current = false;
-  }, [notifyActivity]);
+  }, [notifyActivity, viewer]);
 
   // ── Streamer control panel actions ─────────────────────────────────────────
   // "Override": the character says exactly this text, no LLM involved.
@@ -809,6 +874,9 @@ function Home() {
         ...findThirdPartyEmoteUrls(msg.message).map((content) => ({ content, isImage: true })),
         ...extractEmojis(msg.message).map((content) => ({ content, isImage: false })),
       ]);
+
+      // Game commands (!c4 …) work for everyone in chat, independent of "respond to chat".
+      if (gameManager.handleChat(msg)) return;
 
       if (!twitchConfig.respondToChat) return;
 
@@ -1313,6 +1381,10 @@ function Home() {
       )}
 
       <Menu
+        cafeConfig={cafeConfig}
+        onChangeCafeConfig={setCafeConfig}
+        gamesConfig={gamesConfig}
+        onChangeGamesConfig={setGamesConfig}
         aikaCollabPanel={aikaPanel}
         aiConfig={aiConfig}
         characters={characters}
@@ -1369,7 +1441,7 @@ function Home() {
         onTwitchConnect={handleTwitchConnect}
         onTwitchDisconnect={handleTwitchDisconnect}
         onChangeScreenShareConfig={setScreenShareConfig}
-        onScreenShareStart={() => handleScreenShareStart()}
+        onScreenShareStart={(devices) => handleScreenShareStart(devices)}
         onScreenShareStop={handleScreenShareStop}
         onChangeBackgroundConfig={setBackgroundConfig}
         onChangeCaptionStyle={setCaptionStyle}
@@ -1412,6 +1484,9 @@ function Home() {
 
       {/* Falling emotes/emojis — chat emoji, bits, and alert emote walls. */}
       <EmoteWallOverlay />
+
+      {/* Connect 4 board + the "!c4" command hint (shown while Twitch is connected). */}
+      <GamesOverlay config={gamesConfig} twitchConnected={twitchConnected} corner={gamesCorner} />
       </Stage>
 
       {isStreamer && (
@@ -1448,6 +1523,10 @@ function Home() {
 
           {controlWin && (
             <StreamerControlWindow
+              cafeConfig={cafeConfig}
+              onChangeCafeConfig={setCafeConfig}
+              gamesConfig={gamesConfig}
+              onChangeGamesConfig={setGamesConfig}
               aikaCollabPanel={aikaPanel}
               win={controlWin}
               onClosed={() => setControlWin(null)}
