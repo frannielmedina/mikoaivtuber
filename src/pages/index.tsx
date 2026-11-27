@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState, useMemo } from "react";
 import VrmViewer from "@/components/vrmViewer";
 import { ViewerContext } from "@/features/vrmViewer/viewerContext";
 import {
@@ -106,6 +106,11 @@ import { CafeConfig, DEFAULT_CAFE_CONFIG, sanitizeCafeConfig } from "@/features/
 import { GamesConfig, DEFAULT_GAMES_CONFIG, sanitizeGamesConfig, GameCorner } from "@/features/games/gamesConfig";
 import { gameManager } from "@/features/games/gameManager";
 import { GamesOverlay } from "@/components/gamesOverlay";
+import { ProjectorOverlay } from "@/components/projectorOverlay";
+import { ProjectorConfig, DEFAULT_PROJECTOR_CONFIG, sanitizeProjectorConfig } from "@/features/projector/projectorConfig";
+import { Clip, projectorStore } from "@/features/projector/projectorStore";
+import { resolveMedia } from "@/features/projector/mediaSource";
+import { fetchClipsForLogin, parseManualClips, pickRandom } from "@/features/projector/clipProvider";
 import { StageSizeId, DEFAULT_STAGE_SIZE, parseStageSize, STAGE_ELEMENT_ID } from "@/features/stage/stageConfig";
 import { pollPredictionStore } from "@/features/pollPrediction/pollPredictionStore";
 import { parseSlashCommand, extractAiDirective } from "@/features/pollPrediction/pollParser";
@@ -154,6 +159,8 @@ function Home() {
   const [stageSize, setStageSize] = useState<StageSizeId>(DEFAULT_STAGE_SIZE);
   const [cafeConfig, setCafeConfig] = useState<CafeConfig>(DEFAULT_CAFE_CONFIG);
   const [gamesConfig, setGamesConfig] = useState<GamesConfig>(DEFAULT_GAMES_CONFIG);
+  const [projectorConfig, setProjectorConfig] = useState<ProjectorConfig>(DEFAULT_PROJECTOR_CONFIG);
+  const [channelClips, setChannelClips] = useState<Clip[]>([]);
   const [controlWin, setControlWin] = useState<Window | null>(null);
   const [broadcast, setBroadcast] = useState<BroadcastState>(rtmpBroadcaster.getState());
   const [goLivePrompt, setGoLivePrompt] = useState(false);
@@ -241,6 +248,7 @@ function Home() {
         if (params.stageSize) setStageSize(params.stageSize);
         if (params.cafeConfig) setCafeConfig(sanitizeCafeConfig(params.cafeConfig));
         if (params.gamesConfig) setGamesConfig(sanitizeGamesConfig(params.gamesConfig));
+        if (params.projectorConfig) setProjectorConfig(sanitizeProjectorConfig(params.projectorConfig));
         if (params.screenShareConfig)
           // never auto-resume a share: the browser's picker has to be used again
           setScreenShareConfig({ ...DEFAULT_SCREEN_SHARE_CONFIG, ...params.screenShareConfig, active: false });
@@ -281,10 +289,11 @@ function Home() {
           autonomousConfig,
           cafeConfig,
           gamesConfig,
+          projectorConfig,
         })
       )
     );
-  }, [fallbackMessage, koeiroParam, chatLog, aiConfig, ttsConfig, twitchConfig, discordConfig, minecraftConfig, backgroundConfig, captionStyle, visionConfig, graphicsConfig, stageSize, screenShareConfig, streamerConfig, adBreakConfig, autonomousConfig, cafeConfig, gamesConfig]);
+  }, [fallbackMessage, koeiroParam, chatLog, aiConfig, ttsConfig, twitchConfig, discordConfig, minecraftConfig, backgroundConfig, captionStyle, visionConfig, graphicsConfig, stageSize, screenShareConfig, streamerConfig, adBreakConfig, autonomousConfig, cafeConfig, gamesConfig, projectorConfig]);
 
   // ── VRM model persistence ──────────────────────────────────────────────────
   const [viewerReady, setViewerReady] = useState(false);
@@ -346,9 +355,10 @@ function Home() {
         autonomousConfig,
         cafeConfig,
         gamesConfig,
+        projectorConfig,
       })
     );
-  }, [fallbackMessage, koeiroParam, chatLog, aiConfig, ttsConfig, twitchConfig, discordConfig, minecraftConfig, backgroundConfig, captionStyle, visionConfig, graphicsConfig, stageSize, screenShareConfig, streamerConfig, adBreakConfig, autonomousConfig, cafeConfig, gamesConfig]);
+  }, [fallbackMessage, koeiroParam, chatLog, aiConfig, ttsConfig, twitchConfig, discordConfig, minecraftConfig, backgroundConfig, captionStyle, visionConfig, graphicsConfig, stageSize, screenShareConfig, streamerConfig, adBreakConfig, autonomousConfig, cafeConfig, gamesConfig, projectorConfig]);
 
   // Apply 3D settings (FPS cap, resolution, lights, auto quality) to the viewer.
   useEffect(() => {
@@ -647,6 +657,57 @@ function Home() {
     []
   );
 
+  // ── Projector screen & !so clips ───────────────────────────────────────────
+  const manualClips = useMemo(() => parseManualClips(projectorConfig.clipList), [projectorConfig.clipList]);
+
+  useEffect(() => {
+    projectorStore.setSource(resolveMedia(projectorConfig.source, projectorConfig.sourceAudio));
+    projectorStore.setMaxClipSeconds(projectorConfig.maxClipSeconds);
+  }, [projectorConfig.source, projectorConfig.sourceAudio, projectorConfig.maxClipSeconds]);
+
+  // The broadcaster's own clips (Helix, same Client ID + token as alerts)
+  useEffect(() => {
+    let cancelled = false;
+    if (twitchConnected && projectorConfig.useChannelClips && twitchConfig.clientId && twitchConfig.oauthToken && twitchConfig.channel) {
+      fetchClipsForLogin(twitchConfig.clientId, twitchConfig.oauthToken, twitchConfig.channel).then((c) => {
+        if (!cancelled) setChannelClips(c);
+      });
+    } else {
+      setChannelClips([]);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [twitchConnected, projectorConfig.useChannelClips, twitchConfig.clientId, twitchConfig.oauthToken, twitchConfig.channel]);
+
+  // The screen only exists while there is something to show on it
+  useEffect(() => {
+    projectorStore.setClipAvailability(manualClips.length + channelClips.length > 0, twitchConnected);
+  }, [manualClips.length, channelClips.length, twitchConnected]);
+
+  // `!so` / `!so <channel>`: Miko walks to the screen and a random clip plays. Kept in a ref so the
+  // Twitch handler (created once per connection) always sees the latest settings.
+  const soCooldownRef = useRef(0);
+  const shoutoutRef = useRef<(text: string, mod: boolean) => boolean>(() => false);
+  shoutoutRef.current = (text, mod) => {
+    const m = text.trim().match(/^!so(?:\s+@?([A-Za-z0-9_]{2,25}))?\s*$/i);
+    if (!m) return false;
+    if (!mod && !projectorConfig.everyoneCanShoutout) return true;
+    if (Date.now() - soCooldownRef.current < 15000 || projectorStore.state.phase !== "idle") return true;
+    soCooldownRef.current = Date.now();
+    const login = m[1];
+    (async () => {
+      let pool: Clip[] = [];
+      if (login && projectorConfig.useChannelClips && twitchConfig.clientId && twitchConfig.oauthToken) {
+        pool = await fetchClipsForLogin(twitchConfig.clientId, twitchConfig.oauthToken, login);
+      }
+      if (!pool.length) pool = [...channelClips, ...manualClips];
+      const clip = pickRandom(pool);
+      if (clip) projectorStore.requestClip(clip);
+    })();
+    return true;
+  };
+
   // ── Chat games (Connect 4) ────────────────────────────────────────────────
   useEffect(() => {
     gameManager.setConfig(gamesConfig);
@@ -690,6 +751,7 @@ function Home() {
     async (text: string) => {
       // "!c4 3" typed in the text box plays the game instead of going to the AI.
       if (gameManager.handleLocalText(text)) return;
+      if (shoutoutRef.current(text, true)) return;
       notifyActivity();
       viewer.cafe.notifyConversation();
 
@@ -877,6 +939,7 @@ function Home() {
 
       // Game commands (!c4 …) work for everyone in chat, independent of "respond to chat".
       if (gameManager.handleChat(msg)) return;
+      if (shoutoutRef.current(msg.message, !!(msg.isMod || msg.isBroadcaster))) return;
 
       if (!twitchConfig.respondToChat) return;
 
@@ -1385,6 +1448,8 @@ function Home() {
         onChangeCafeConfig={setCafeConfig}
         gamesConfig={gamesConfig}
         onChangeGamesConfig={setGamesConfig}
+        projectorConfig={projectorConfig}
+        onChangeProjectorConfig={setProjectorConfig}
         aikaCollabPanel={aikaPanel}
         aiConfig={aiConfig}
         characters={characters}
@@ -1486,7 +1551,8 @@ function Home() {
       <EmoteWallOverlay />
 
       {/* Connect 4 board + the "!c4" command hint (shown while Twitch is connected). */}
-      <GamesOverlay config={gamesConfig} twitchConnected={twitchConnected} corner={gamesCorner} />
+      <GamesOverlay config={gamesConfig} twitchConnected={twitchConnected} corner={gamesCorner} cafe3D={backgroundConfig.type === "cafe" && !screenShareConfig.active} />
+      <ProjectorOverlay sourceAudio={projectorConfig.sourceAudio} />
       </Stage>
 
       {isStreamer && (
@@ -1527,6 +1593,8 @@ function Home() {
               onChangeCafeConfig={setCafeConfig}
               gamesConfig={gamesConfig}
               onChangeGamesConfig={setGamesConfig}
+              projectorConfig={projectorConfig}
+              onChangeProjectorConfig={setProjectorConfig}
               aikaCollabPanel={aikaPanel}
               win={controlWin}
               onClosed={() => setControlWin(null)}
