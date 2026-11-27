@@ -22,6 +22,8 @@ type Props = {
   twitchConnected: boolean;
   /** Where to put it (already adjusted so it never sits under the screen-share facecam). */
   corner: GameCorner;
+  /** The cafe is showing the 3D board on the table, so only the status/buttons are drawn here. */
+  cafe3D?: boolean;
 };
 
 function cornerStyle(corner: GameCorner): CSSProperties {
@@ -85,7 +87,7 @@ const Disc = ({ who, drop, win }: { who: 0 | 1 | 2; drop?: number; win?: boolean
   />
 );
 
-const Board = ({ s }: { s: Connect4Session }) => {
+const Board = ({ s, hideGrid }: { s: Connect4Session; hideGrid?: boolean }) => {
   const win = new Set((s.winLine ?? []).map(([r, c]) => `${r}:${c}`));
   const playing = s.status === "playing" && s.turn === 1 && !s.thinking;
   return (
@@ -115,6 +117,7 @@ const Board = ({ s }: { s: Connect4Session }) => {
           </button>
         ))}
       </div>
+      {!hideGrid && (
       <div
         style={{
           background: `linear-gradient(${BOARD}, ${BOARD_DARK})`,
@@ -141,11 +144,12 @@ const Board = ({ s }: { s: Connect4Session }) => {
           })
         )}
       </div>
+      )}
     </div>
   );
 };
 
-export const GamesOverlay = ({ config, twitchConnected, corner }: Props) => {
+export const GamesOverlay = ({ config, twitchConnected, corner, cafe3D }: Props) => {
   const [session, setSession] = useState<Connect4Session | null>(null);
   useEffect(() => gameManager.subscribe(setSession), []);
 
@@ -186,7 +190,7 @@ export const GamesOverlay = ({ config, twitchConnected, corner }: Props) => {
             </div>
           </div>
 
-          <Board s={session} />
+          <Board s={session} hideGrid={cafe3D} />
 
           <div
             style={{

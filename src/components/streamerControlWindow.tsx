@@ -9,6 +9,7 @@ import { BackgroundSettings } from "./backgroundSettings";
 import { CafeSettings } from "./cafeSettings";
 import { CafeConfig } from "@/features/cafe/cafeConfig";
 import { GamesConfig } from "@/features/games/gamesConfig";
+import { ProjectorConfig } from "@/features/projector/projectorConfig";
 import { VisionSettings } from "./visionSettings";
 import { GraphicsSettings } from "./graphicsSettings";
 import { StreamerSettings } from "./streamerSettings";
@@ -60,6 +61,8 @@ export type StreamerControlProps = {
   onChangeCafeConfig: (c: CafeConfig) => void;
   gamesConfig: GamesConfig;
   onChangeGamesConfig: (c: GamesConfig) => void;
+  projectorConfig: ProjectorConfig;
+  onChangeProjectorConfig: (c: ProjectorConfig) => void;
   onChangeBackgroundConfig: (c: BackgroundConfig) => void;
 
   visionConfig: VisionConfig;
@@ -195,6 +198,8 @@ const Content = (p: StreamerControlProps) => {
                 onChangeCafeConfig={p.onChangeCafeConfig}
                 gamesConfig={p.gamesConfig}
                 onChangeGamesConfig={p.onChangeGamesConfig}
+                projectorConfig={p.projectorConfig}
+                onChangeProjectorConfig={p.onChangeProjectorConfig}
                 backgroundConfig={p.backgroundConfig}
                 onChangeBackgroundConfig={p.onChangeBackgroundConfig}
               />

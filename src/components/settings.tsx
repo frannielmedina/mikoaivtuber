@@ -11,6 +11,7 @@ import { BackgroundSettings } from "./backgroundSettings";
 import { CafeSettings } from "./cafeSettings";
 import { CafeConfig } from "@/features/cafe/cafeConfig";
 import { GamesConfig } from "@/features/games/gamesConfig";
+import { ProjectorConfig } from "@/features/projector/projectorConfig";
 import { CaptionSettings } from "./captionSettings";
 import { VisionSettings } from "./visionSettings";
 import { DiscordSettings } from "./discordSettings";
@@ -103,6 +104,8 @@ type Props = {
   onChangeCafeConfig: (config: CafeConfig) => void;
   gamesConfig: GamesConfig;
   onChangeGamesConfig: (config: GamesConfig) => void;
+  projectorConfig: ProjectorConfig;
+  onChangeProjectorConfig: (config: ProjectorConfig) => void;
   /** Window whose Escape key closes the panel (the popup window when settings are shown in their own window). */
   targetWindow?: Window;
   onChangeCaptionStyle: (style: CaptionStyle) => void;
@@ -260,6 +263,8 @@ export const SettingsContent = (props: Props) => {
     onChangeCafeConfig,
     gamesConfig,
     onChangeGamesConfig,
+    projectorConfig,
+    onChangeProjectorConfig,
     targetWindow,
     onChangeCaptionStyle,
     onChangeVisionConfig,
@@ -577,6 +582,8 @@ export const SettingsContent = (props: Props) => {
                 onChangeCafeConfig={onChangeCafeConfig}
                 gamesConfig={gamesConfig}
                 onChangeGamesConfig={onChangeGamesConfig}
+                projectorConfig={projectorConfig}
+                onChangeProjectorConfig={onChangeProjectorConfig}
                 backgroundConfig={backgroundConfig}
                 onChangeBackgroundConfig={onChangeBackgroundConfig}
               />

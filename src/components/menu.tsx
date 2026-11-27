@@ -8,6 +8,7 @@ import { Settings, SettingsContent } from "./settings";
 import { PopoutPortal, openControlWindow, SETTINGS_WINDOW_NAME } from "./popoutPortal";
 import { CafeConfig } from "@/features/cafe/cafeConfig";
 import { GamesConfig } from "@/features/games/gamesConfig";
+import { ProjectorConfig } from "@/features/projector/projectorConfig";
 import { CharactersApi } from "@/features/characters/useCharacters";
 import { ThemeId } from "@/features/theme/theme";
 import { ViewerContext } from "@/features/vrmViewer/viewerContext";
@@ -103,6 +104,8 @@ type Props = {
   onChangeCafeConfig: (config: CafeConfig) => void;
   gamesConfig: GamesConfig;
   onChangeGamesConfig: (config: GamesConfig) => void;
+  projectorConfig: ProjectorConfig;
+  onChangeProjectorConfig: (config: ProjectorConfig) => void;
   stageSize: StageSizeId;
   onChangeStageSize: (size: StageSizeId) => void;
   /** Pre-built Aika collab panel (state lives in index.tsx). */
@@ -167,6 +170,8 @@ export const Menu = ({
   onChangeCafeConfig,
   gamesConfig,
   onChangeGamesConfig,
+  projectorConfig,
+  onChangeProjectorConfig,
   onScreenShareStop,
   onChangeBackgroundConfig,
   onChangeCaptionStyle,
@@ -314,6 +319,8 @@ export const Menu = ({
           onChangeCafeConfig={onChangeCafeConfig}
           gamesConfig={gamesConfig}
           onChangeGamesConfig={onChangeGamesConfig}
+          projectorConfig={projectorConfig}
+          onChangeProjectorConfig={onChangeProjectorConfig}
           {...extra}
         />
   );
