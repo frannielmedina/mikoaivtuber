@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { VRM } from "@pixiv/three-vrm";
 import { bone, reachArm, sitLegs } from "./ik";
+import { SeatedSkirt } from "./seatedSkirt";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BodyActions: the "doing things with real objects" layer — sitting on a chair,
@@ -15,6 +16,7 @@ export type ArmGoal = { target: THREE.Vector3; hint: THREE.Vector3 };
 
 export class BodyActions {
   private _vrm: VRM;
+  private _skirt: SeatedSkirt; // keeps the skirt spring-bones sane while the legs are folded for sitting
   private _sx: number; // VRM0 mirror sign — only used for the head nod, which is bone-local
 
   // set by the director
@@ -31,6 +33,7 @@ export class BodyActions {
 
   constructor(vrm: VRM) {
     this._vrm = vrm;
+    this._skirt = new SeatedSkirt(vrm);
     this._sx = String((vrm.meta as any)?.metaVersion) === "0" ? -1 : 1;
   }
 
@@ -52,6 +55,8 @@ export class BodyActions {
     const b = bodyBlend;
 
     if (this.sit > 0.001) sitLegs(vrm, this.sitForward, this.sit * b);
+    // Runs every frame (cheap no-op once standing) so the skirt settings fade back when she gets up.
+    this._skirt.apply(this.sit * b, this.sitForward);
 
     // Upper body: turn toward the camera / lean toward something (parent-frame Y/Z rotations)
     if (Math.abs(this.twist) > 0.001 || Math.abs(this.leanRoll) > 0.001) {
