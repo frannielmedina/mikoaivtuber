@@ -16,7 +16,16 @@ export type CafeConfig = {
   closeupHoldSeconds: number;
   /** 1 = default close-up, >1 = tighter, <1 = looser. */
   closeupZoom: number;
+  /** Little things she does between walks. */
+  activities: { sit: boolean; cat: boolean; coffee: boolean };
+  /** How often she starts one while wandering. */
+  activityRate: ActivityRate;
+  /** How long she stays seated in a chair before getting up again. */
+  sitSeconds: number;
 };
+
+export type ActivityRate = "off" | "rare" | "normal" | "often";
+export type ActivityName = "sit" | "cat" | "coffee";
 
 export const DEFAULT_CAFE_CONFIG: CafeConfig = {
   timeOfDay: "day",
@@ -24,6 +33,9 @@ export const DEFAULT_CAFE_CONFIG: CafeConfig = {
   walkSpeed: 0.8,
   closeupHoldSeconds: 10,
   closeupZoom: 1,
+  activities: { sit: true, cat: true, coffee: true },
+  activityRate: "normal",
+  sitSeconds: 30,
 };
 
 export const TIME_OF_DAY_OPTIONS: { id: TimeOfDay; label: string; emoji: string }[] = [
@@ -40,6 +52,13 @@ export function sanitizeCafeConfig(c: Partial<CafeConfig> | undefined): CafeConf
     walkSpeed: clamp(Number(m.walkSpeed) || DEFAULT_CAFE_CONFIG.walkSpeed, 0.3, 1.6),
     closeupHoldSeconds: clamp(Number(m.closeupHoldSeconds) || DEFAULT_CAFE_CONFIG.closeupHoldSeconds, 2, 120),
     closeupZoom: clamp(Number(m.closeupZoom) || 1, 0.6, 1.8),
+    activities: {
+      sit: m.activities?.sit !== false,
+      cat: m.activities?.cat !== false,
+      coffee: m.activities?.coffee !== false,
+    },
+    activityRate: (["off", "rare", "normal", "often"] as const).includes(m.activityRate) ? m.activityRate : "normal",
+    sitSeconds: clamp(Number(m.sitSeconds) || 30, 10, 180),
   };
 }
 

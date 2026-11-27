@@ -30,6 +30,8 @@ export class WalkController {
   private _blend = 0;
   private _speed = 0; // metres per second, set by the director every frame
   private _active = false;
+  /** Vertical body bounce in metres — the CafeDirector adds it to the character's height. */
+  bob = 0;
 
   private _qa = new THREE.Quaternion();
   private _qb = new THREE.Quaternion();
@@ -104,7 +106,7 @@ export class WalkController {
     }
 
     // The body is lowest when the legs are furthest apart.
-    this._vrm.scene.position.y = BOB * Math.cos(2 * p) * b;
+    this.bob = BOB * Math.cos(2 * p) * b;
   }
 
   /** Legs are not touched by the idle, so they are set absolutely (rest pose → stride, by `blend`). */
@@ -133,6 +135,6 @@ export class WalkController {
     ]) {
       h.getNormalizedBoneNode(name as any)?.quaternion.identity();
     }
-    this._vrm.scene.position.y = 0;
+    this.bob = 0;
   }
 }

@@ -17,6 +17,7 @@ import {
   toonGradient,
 } from "./toon";
 import { TimeOfDay } from "./cafeConfig";
+import { bakeGroup, BOARD_TOP_Y, Connect4Board3D, Hearts, makeCup, ProjectorRig, Tray } from "./cafeProps";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The anime cafe. A single room seen from its open front:
@@ -33,6 +34,19 @@ import { TimeOfDay } from "./cafeConfig";
 export const ROOM = { x0: -4.8, x1: 4.8, z0: -3.6, z1: 4.6, h: 4.2 };
 
 export type Waypoint = { x: number; z: number };
+
+/** Something Miko can sit on. `yaw` is the direction she faces while seated (0 = +z, toward the camera). */
+export type Seat = {
+  id: string;
+  kind: "chair" | "bench";
+  x: number;
+  z: number;
+  yaw: number;
+  topY: number;
+  table: number; // index into CafeScene.tables, -1 for the bench
+  group?: THREE.Group; // the chair mesh (slides in/out)
+};
+export type ServeSpot = { table: number; stand: Waypoint; yaw: number; cup: THREE.Vector3 };
 export type Obstacle = { x: number; z: number; r: number };
 
 type Tod = {
@@ -84,6 +98,23 @@ export class CafeScene {
     { x: 1.6, z: -0.2 },
   ];
   readonly obstacles: Obstacle[] = [];
+  readonly tables: Waypoint[] = [];
+  readonly seats: Seat[] = [];
+  readonly serveSpots: ServeSpot[] = [];
+  readonly serveCups: THREE.Group[] = [];
+  readonly tray = new Tray();
+  readonly handCup = makeCup(0xffc8d6);
+  readonly projector = new ProjectorRig();
+  readonly board = new Connect4Board3D();
+  readonly hearts = new Hearts();
+  /** Where a hand lands when patting the cat (its back). */
+  readonly catSpot = new THREE.Vector3(0.5, 0.68, -3.2);
+  /** Counter: where she stands to make coffee, and the espresso machine's front. */
+  readonly counterSpot: Waypoint = { x: 2.0, z: -2.3 };
+  readonly machinePoint = new THREE.Vector3(1.95, 1.34, -2.84);
+  /** Where she stands next to the projector screen, and the facing she takes. */
+  readonly projectorSpot = { x: -0.95, z: -1.75, yaw: -0.75 };
+  readonly screenPoint = new THREE.Vector3(-1.5, 2.3, -3.27);
   /**
    * Where the character may walk. The wide-shot camera frames her full body only up to
    * roughly z = 1.4, so the walkable area stops there (the floor in front is foreground).
@@ -145,8 +176,45 @@ export class CafeScene {
     this._grade.frustumCulled = false;
     this.group.add(this._grade);
 
+    this.buildProps();
     this.mergeStatics();
     this.setTimeOfDay("day");
+  }
+
+  /** Interactive props. All flagged `dynamic` so mergeStatics leaves them alone. */
+  private buildProps() {
+    const g = this.group;
+    const props = [this.tray.group, this.handCup, this.projector.group, this.board.group, this.hearts.group];
+    props.forEach((p) => {
+      p.userData.dynamic = true;
+      g.add(p);
+    });
+    this.handCup.visible = false;
+
+    // serve spots: where she stands, and where the cup goes (on her side of the table, facing the camera)
+    const mk = (table: number, standZ: number) => {
+      const t = this.tables[table];
+      const cup = makeCup(0xa8e0d0);
+      cup.userData.dynamic = true;
+      cup.position.set(t.x, BOARD_TOP_Y, t.z - 0.2);
+      cup.visible = false;
+      g.add(cup);
+      this.serveCups[table] = cup;
+      this.serveSpots.push({ table, stand: { x: t.x, z: standZ }, yaw: 0, cup: new THREE.Vector3(t.x, BOARD_TOP_Y, t.z - 0.2) });
+    };
+    mk(0, -3.08);
+    mk(2, -1.12);
+
+    this.board.group.position.set(this.tables[2].x, BOARD_TOP_Y, this.tables[2].z);
+    this.hearts.group.position.copy(this.catSpot).add(new THREE.Vector3(0, 0.05, 0.05));
+  }
+
+  /** Slide a chair out (pull = 1) or tuck it back in (0). */
+  moveChair(seat: Seat, pull: number) {
+    if (!seat.group) return;
+    const fx = Math.sin(seat.yaw);
+    const fz = Math.cos(seat.yaw);
+    seat.group.position.set(seat.x - fx * 0.35 * pull, 0, seat.z - fz * 0.35 * pull);
   }
 
   /**
@@ -254,6 +322,11 @@ export class CafeScene {
       const k = 0.72 + 0.28 * Math.sin(t * (1.2 + i * 0.35) + i * 1.7);
       m.color.setRGB(1 * k, 0.86 * k, 0.55 * k);
     });
+
+    this.tray.update(dt);
+    this.projector.update(dt);
+    this.board.update(dt);
+    this.hearts.update(dt);
 
     // Cat breathing
     if (this._cat) {
@@ -838,15 +911,17 @@ export class CafeScene {
     }
     c.add(at(box(0.46, 0.42, 0.05, C.wood, { ink: 0.014 }), 0, 0.77, -0.21));
     c.add(at(box(0.34, 0.26, 0.03, cushion), 0, 0.79, -0.18));
-    return c;
+    c.userData.dynamic = true; // slides in/out when she sits down / gets up
+    return bakeGroup(c);
   }
 
-  private makeTable(withCake: boolean): THREE.Group {
+  private makeTable(withCake: boolean, decor = true): THREE.Group {
     const t = new THREE.Group();
     t.add(at(cyl(0.5, 0.5, 0.05, C.cream, 28, { ink: 0.014 }), 0, 0.75, 0));
     t.add(at(cyl(0.52, 0.52, 0.02, C.pinkSoft, 28), 0, 0.735, 0));
     t.add(at(cyl(0.05, 0.05, 0.7, C.woodDark, 10), 0, 0.37, 0));
     t.add(at(cyl(0.24, 0.26, 0.05, C.woodDark, 20, { ink: 0.012 }), 0, 0.025, 0));
+    if (!decor) return bakeGroup(t);
     // bud vase
     t.add(at(cyl(0.035, 0.03, 0.11, 0xcfe4ff, 10, { ink: 0.006 }), 0.12, 0.835, -0.08));
     t.add(at(cyl(0.006, 0.006, 0.12, C.leafDark, 5), 0.12, 0.95, -0.08));
@@ -901,14 +976,18 @@ export class CafeScene {
     const setups: { x: number; z: number; chairs: [number, number, number][]; cake: boolean; cush: number }[] = [
       { x: -2.5, z: -2.3, chairs: [[-3.2, -2.3, Math.PI / 2], [-1.8, -2.3, -Math.PI / 2]], cake: true, cush: C.pink },
       { x: -3.4, z: 0.95, chairs: [[-3.4, 0.25, 0], [-3.4, 1.65, Math.PI]], cake: false, cush: C.mint },
-      { x: 3.5, z: -0.4, chairs: [[2.8, -0.4, Math.PI / 2], [4.2, -0.4, -Math.PI / 2]], cake: true, cush: C.butter },
+      // Table B is the Connect 4 table: bare top, and the left chair is turned 45° toward the camera.
+      { x: 3.5, z: -0.4, chairs: [[2.8, -0.4, Math.PI / 4], [4.2, -0.4, -Math.PI / 2]], cake: false, cush: C.butter },
     ];
-    setups.forEach((s) => {
-      place(this.makeTable(s.cake), s.x, s.z);
+    setups.forEach((s, ti) => {
+      this.tables.push({ x: s.x, z: s.z });
+      place(this.makeTable(s.cake, ti !== 2), s.x, s.z);
       this.obstacles.push({ x: s.x, z: s.z, r: 0.78 });
       shadowAt(s.x, s.z, 0.75, 0.7);
-      s.chairs.forEach(([cx, cz, ry]) => {
-        place(this.makeChair(s.cush), cx, cz, ry);
+      s.chairs.forEach(([cx, cz, ry], ci) => {
+        const chair = this.makeChair(s.cush);
+        place(chair, cx, cz, ry);
+        this.seats.push({ id: `t${ti}c${ci}`, kind: "chair", x: cx, z: cz, yaw: ry, topY: 0.535, table: ti, group: chair });
         this.obstacles.push({ x: cx, z: cz, r: 0.42 });
         shadowAt(cx, cz, 0.32, 0.32, 0.25);
       });
@@ -923,7 +1002,7 @@ export class CafeScene {
     pil1.rotation.set(-0.25, 0, 0.1);
     bench.add(pil1);
     const pil2 = box(0.36, 0.3, 0.12, C.mint, { ink: 0.01 });
-    pil2.position.set(0.85, 0.65, -0.2);
+    pil2.position.set(0.95, 0.65, -0.2);
     pil2.rotation.set(-0.25, 0, -0.1);
     bench.add(pil2);
     bench.position.set(0.2, 0, -3.28);
@@ -932,7 +1011,8 @@ export class CafeScene {
 
     this._cat = this.makeCat();
     this._cat.userData.dynamic = true;
-    this._cat.position.set(0.25, 0.5, -3.2);
+    this._cat.position.set(0.5, 0.5, -3.2);
+    this.seats.push({ id: "bench", kind: "bench", x: 0.88, z: -3.12, yaw: 0, topY: 0.5, table: -1 });
     g.add(this._cat);
 
     // Bookshelf on the left wall (built facing +z, then turned to face +x)
