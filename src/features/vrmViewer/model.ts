@@ -17,6 +17,7 @@ import { isExpressionGestureTag } from "../emoteController/emoteConstants";
 import { IdleController } from "../emoteController/idleController";
 import { WalkController } from "../cafe/walkController";
 import { TalkGestureController } from "../cafe/talkGestures";
+import { BodyActions } from "../cafe/actionController";
 
 // Crossfade time (seconds) between the idle loop and a VRMA animation.
 const VRMA_FADE_SEC = 0.4;
@@ -29,6 +30,10 @@ export class Model {
   public walk?: WalkController;
   /** Automatic hand/head gestures while speaking. */
   public talk?: TalkGestureController;
+  /** Sitting, reaching, patting, carrying — hands/legs placed on real objects (IK). */
+  public actions?: BodyActions;
+  /** World height of the hips when standing, with the scene at y = 0. */
+  public hipsHeight = 0.8;
   /** vrm.scene.rotation.y right after loading (π for VRM 0.x models). */
   public baseYaw = 0;
   private _speaking = false;
@@ -68,7 +73,15 @@ export class Model {
     this._idle = new IdleController(vrm);
     this.walk = new WalkController(vrm);
     this.talk = new TalkGestureController(vrm);
+    this.actions = new BodyActions(vrm);
     this.baseYaw = vrm.scene.rotation.y;
+    {
+      const hips = vrm.humanoid?.getNormalizedBoneNode("hips");
+      if (hips) {
+        vrm.scene.updateMatrixWorld(true);
+        this.hipsHeight = hips.getWorldPosition(new THREE.Vector3()).y - vrm.scene.position.y;
+      }
+    }
     this.emoteController = new EmoteController(vrm, this._lookAtTargetParent);
 
     // No-op — pose system no longer pauses the mixer
@@ -82,6 +95,7 @@ export class Model {
       this._idle = undefined;
       this.walk = undefined;
       this.talk = undefined;
+      this.actions = undefined;
       this._speaking = false;
       this._vrmaActions.clear();
       this._currentVrma = undefined;
@@ -238,6 +252,7 @@ export class Model {
       const bodyBlend = 1 - this._vrmaWeight();
       this.walk?.update(delta, bodyBlend);
       this.talk?.update(delta, bodyBlend, this._speaking, this._volume);
+      this.actions?.update(delta, bodyBlend);
     }
 
     // 3b. When a VRMA animation is about to end, start fading back to idle
